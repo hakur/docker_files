@@ -1,0 +1,19 @@
+version: "2.1"
+services:
+  wireguard:
+    devices:
+    - /dev/net/tun
+    image: registry.cn-hangzhou.aliyuncs.com/cso2/wireguard-server
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wireguard
+    cap_add:
+    - NET_ADMIN
+    # volumes:
+    #   - ./config:/etc/wireguard #自定义的wg0.conf
+    ports:
+      - 32200:32200/udp
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    restart: always
