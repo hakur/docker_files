@@ -1,0 +1,11 @@
+FROM ubuntu:20.04
+ADD https://dl.min.io/client/mc/release/linux-amd64/mc /bin/mc
+COPY sources.list /etc/apt/sources.list
+COPY percona-xtrabackup-24_2.4.23-1.focal_amd64.deb /xtrabackup.deb
+RUN apt update
+RUN apt install -y libdbd-mysql-perl libcurl4-openssl-dev rsync libaio1 libcurl4 libev4 libssl1.1
+RUN apt install -y mysql-client 
+RUN dpkg -i /xtrabackup.deb && rm -rf /xtrabackup.deb && apt purge
+COPY function.sh /function.sh
+RUN chmod +x /function.sh && chmod +x /bin/mc
+CMD ["bash", "-rcfile", "/function.sh"]
