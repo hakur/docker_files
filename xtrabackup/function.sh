@@ -20,6 +20,10 @@ S3_BUCKET=${S3_BUCKET}
 S3_ACCESS_KEY=${S3_ACCESS_KEY}
 S3_SECURITY_KEY=${S3_SECURITY_KEY}
 S3_OBJECT_DIR=${S3_OBJECT_DIR}
+S3_FILE=${S3_FILE}
+
+RECOVER_TMP_DIR=${RECOVER_TMP_DIR:-/data/recover}
+RECOVER_MYSQL_DATA_DIR=${RECOVER_MYSQL_DATA_DIR:-/data/mysql}
 
 ATTACHED_MYSQL_HOST=${ATTACHED_MYSQL_HOST}
 
@@ -124,6 +128,7 @@ function fullBackup() {
 # prepare , sync mysql and backup data before restore
 function prepare() {
     local targetDir=$1
+    echolog "Run command : xtrabackup --default-file=$CNF_FILE --prepare --target-dir=$targetDir"
     xtrabackup --default-file=$CNF_FILE --prepare --target-dir=$targetDir
     local code=$?
     if [ $code != 0 ];then
@@ -133,15 +138,39 @@ function prepare() {
 }
 
 function restore() {
-    local targetDir=$1
-    prepare $targetDir
+    mc alias set auth $S3_ENDPOINT $S3_ACCESS_KEY $S3_SECURITY_KEY
+
+    local recoverDataDir=$RECOVER_TMP_DIR/recover
+    local oldDataDir=$RECOVER_TMP_DIR/old
+    mkdir -p $RECOVER_TMP_DIR
+    mkdir -p $recoverDataDir
+    mkdir -p $oldDataDir
+
+    cd $recoverDataDir
+    mc cat auth/$S3_BUCKET/$S3_FILE | tar -zxf -
+
+    prepare $recoverDataDir
     local code=$?
     if [ $code != 0 ];then
-        echolog "restore from dir=[$targetDir] failed"
+        echolog "restore from dir=[$recoverDataDir] failed"
         return $code
     fi
 
-    xtrabackup --default-file=$CNF_FILE --copy-back --target-dir=$targetDir
+    mv $RECOVER_MYSQL_DATA_DIR/* $oldDataDir
+
+    echolog "Run command : xtrabackup --default-file=$CNF_FILE --copy-back --target-dir=$recoverDataDir --datadir=$RECOVER_MYSQL_DATA_DIR"
+
+    xtrabackup --default-file=$CNF_FILE --copy-back --target-dir=$recoverDataDir --datadir=$RECOVER_MYSQL_DATA_DIR 
+    code=$?
+    rm -rf $RECOVER_TMP_DIR/recover
+    if [ $code != 0 ];then
+        mv $oldDataDir/* $RECOVER_MYSQL_DATA_DIR
+        return $code
+    fi
+    useradd mysql
+    chmod -R 777 $RECOVER_MYSQL_DATA_DIR
+    chown -R mysql:mysql $RECOVER_MYSQL_DATA_DIR
+    rm -rf $oldDataDir
 }
 
 function findMasterServer() {
